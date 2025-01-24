@@ -26,9 +26,13 @@ public class ArchivedTransaction {
     @Column(nullable = false)
     private TransactionType transactionType;
 
+    @ManyToOne
+    @JoinColumn(name = "destination_wallet_id")
+    private Wallet destinationWallet;
+
     @Column(nullable = false)
     private Instant timestamp;
 
     @Column(nullable = false)
-    private Instant archivedAt; // Fecha en la que fue archivada
+    private Instant archivedAt;
 }

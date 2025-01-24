@@ -1,6 +1,7 @@
 package com.nomcci.wallet.management.controller;
 
 import com.nomcci.wallet.management.dto.ErrorResponse;
+import com.nomcci.wallet.management.dto.TransactionDTO;
 import com.nomcci.wallet.management.exception.InsufficientFundsException;
 import com.nomcci.wallet.management.exception.WalletNotFoundException;
 import com.nomcci.wallet.management.model.Transaction;
@@ -100,13 +101,13 @@ public class UserWalletController {
      * @return Historial paginado de transacciones.
      */
     @GetMapping("/transactions")
-    public ResponseEntity<Page<Transaction>> getTransactionHistory(
+    public ResponseEntity<Page<TransactionDTO>> getTransactionHistory(
             @RequestParam int page,
             @RequestParam int size,
             @RequestParam(defaultValue = "timestamp") String sortBy,
             @RequestParam(required = false) Instant startTimestamp,
             @RequestParam(required = false) Instant endTimestamp ) {
-        Page<Transaction> transactions = walletService.getTransactionHistory(page, size, sortBy, startTimestamp, endTimestamp);
+        Page<TransactionDTO> transactions = walletService.getTransactionHistory(page, size, sortBy, startTimestamp, endTimestamp);
         return ResponseEntity.ok(transactions);
     }
 

@@ -1,11 +1,13 @@
 package com.nomcci.wallet.management.controller;
 
+import com.nomcci.wallet.management.dto.TransactionDTO;
 import com.nomcci.wallet.management.model.Transaction;
 import com.nomcci.wallet.management.model.Wallet;
 import com.nomcci.wallet.management.service.WalletService;
 import jakarta.websocket.server.PathParam;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -76,14 +78,14 @@ public class AdminWalletController {
      * @return Historial paginado de transacciones.
      */
     @GetMapping("/{walletId}/transactions")
-    public ResponseEntity<Page<Transaction>> getTransactionHistory(
+    public ResponseEntity<PageImpl<TransactionDTO>> getTransactionHistory(
             @PathVariable Long walletId,
             @RequestParam int page,
             @RequestParam int size,
             @RequestParam(defaultValue = "timestamp") String sortBy,
             @RequestParam(required = false) Instant startTimestamp,
             @RequestParam(required = false) Instant endTimestamp ) {
-        Page<Transaction> transactions = walletService.getTransactionHistory(walletId, page, size, sortBy, startTimestamp, endTimestamp);
+        PageImpl<TransactionDTO> transactions = walletService.getTransactionHistory(walletId, page, size, sortBy, startTimestamp, endTimestamp);
         return ResponseEntity.ok(transactions);
     }
 }

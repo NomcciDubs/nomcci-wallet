@@ -1,5 +1,6 @@
 package com.nomcci.wallet.management.service;
 
+import com.nomcci.wallet.management.dto.TransactionDTO;
 import com.nomcci.wallet.management.model.*;
 import com.nomcci.wallet.management.repository.*;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +58,32 @@ public class WalletService {
 
         // Calcula el saldo
         return recalculateBalance(walletId);
+    }
+
+    @Transactional
+    public Wallet deposit(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Deposit amount must be greater than zero.");
+        }
+
+        Jwt jwt = (Jwt) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Long userId = Long.parseLong(jwt.getSubject());
+
+        System.out.println("Id: "+userId);
+
+        Wallet wallet = walletRepository.findByUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Wallet not found for the user."));
+
+        // Crea y guarda la transaccion
+        Transaction transaction = new Transaction();
+        transaction.setWallet(wallet);
+        transaction.setAmount(amount);
+        transaction.setTransactionType(TransactionType.DEPOSIT);
+        transaction.setTimestamp(Instant.now());
+        transactionRepository.save(transaction);
+
+        // Calcula el saldo
+        return recalculateBalance(wallet.getId());
     }
 
     /**
@@ -178,7 +205,7 @@ public class WalletService {
      * @param endTimestamp Fin del rango de fechas (opcional).
      * @return Página de transacciones.
      */
-    public Page<Transaction> getTransactionHistory(
+    public Page<TransactionDTO> getTransactionHistory(
             int page,
             int size,
             String sortBy,
@@ -211,20 +238,38 @@ public class WalletService {
         Page<ArchivedTransaction> archivedTransactions = archivedTransactionRepository.findByWalletAndTimestampBetween(wallet, startTimestamp, endTimestamp, archivedPageable);
 
         // Une las transacciones activas y archivadas
-        List<Transaction> allTransactions = new ArrayList<>(activeTransactions.getContent());
+        List<TransactionDTO> allTransactionDTOs = new ArrayList<>();
 
+        // Mapea transacciones activas a DTO
+        allTransactionDTOs.addAll(
+                activeTransactions.stream()
+                        .map(tx -> new TransactionDTO(
+                                tx.getTimestamp(),
+                                tx.getDestinationWallet() != null && tx.getDestinationWallet().getUser() != null
+                                        ? tx.getDestinationWallet().getUser().getFirstName()
+                                        : "N/A", // Valor predeterminado si destinationWallet o user es nulo
+                                tx.getTransactionType().name(),
+                                tx.getAmount()
+                        ))
+                        .toList()
+        );
+
+        // Mapea transacciones archivadas a DTO
         for (ArchivedTransaction archivedTransaction : archivedTransactions) {
-            Transaction transaction = new Transaction();
-            transaction.setId(archivedTransaction.getId());
-            transaction.setWallet(archivedTransaction.getWallet());
-            transaction.setAmount(archivedTransaction.getAmount());
-            transaction.setTransactionType(archivedTransaction.getTransactionType());
-            transaction.setTimestamp(archivedTransaction.getTimestamp());
-            allTransactions.add(transaction);
+            TransactionDTO transactionDTO = new TransactionDTO(
+                    archivedTransaction.getTimestamp(),
+                    archivedTransaction.getDestinationWallet() != null && archivedTransaction.getDestinationWallet().getUser() != null
+                            ? archivedTransaction.getDestinationWallet().getUser().getFirstName()
+                            : "N/A", // Valor predeterminado si destinationWallet o user es nulo
+                    archivedTransaction.getTransactionType().name(),
+                    archivedTransaction.getAmount());
+            allTransactionDTOs.add(transactionDTO);
         }
 
-        return new PageImpl<>(allTransactions, pageable, activeTransactions.getTotalElements() + archivedTransactions.getTotalElements());
+
+        return new PageImpl<>(allTransactionDTOs, pageable, activeTransactions.getTotalElements() + archivedTransactions.getTotalElements());
     }
+
 
 
     /**
@@ -299,6 +344,7 @@ public class WalletService {
                     archivedTransaction.setTransactionType(transaction.getTransactionType());
                     archivedTransaction.setTimestamp(transaction.getTimestamp());
                     archivedTransaction.setArchivedAt(Instant.now());
+                    archivedTransaction.setDestinationWallet(transaction.getDestinationWallet());
                     return archivedTransaction;
                 })
                 .toList();
@@ -426,7 +472,7 @@ public class WalletService {
      * @param endTimestamp Fin del rango de fechas (opcional).
      * @return Página de transacciones.
      */
-    public Page<Transaction> getTransactionHistory(
+    public PageImpl<TransactionDTO> getTransactionHistory(
             Long walletId,
             int page,
             int size,
@@ -456,19 +502,30 @@ public class WalletService {
         Pageable archivedPageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, sortBy));
         Page<ArchivedTransaction> archivedTransactions = archivedTransactionRepository.findByWalletAndTimestampBetween(wallet, startTimestamp, endTimestamp, archivedPageable);
 
-        // Une las transacciones activas y archivadas
-        List<Transaction> allTransactions = new ArrayList<>(activeTransactions.getContent());
+        // Mapea transacciones activas a DTO
+        List<TransactionDTO> allTransactionDTOs = new ArrayList<>(activeTransactions.stream()
+                .map(tx -> new TransactionDTO(
+                        tx.getTimestamp(),
+                        tx.getDestinationWallet() != null && tx.getDestinationWallet().getUser() != null
+                                ? tx.getDestinationWallet().getUser().getFirstName()
+                                : "N/A", // Valor predeterminado si destinationWallet o user es nulo
+                        tx.getTransactionType().name(),
+                        tx.getAmount()))
+                .toList());
 
+        // Mapea transacciones archivadas a DTO
         for (ArchivedTransaction archivedTransaction : archivedTransactions) {
-            Transaction transaction = new Transaction();
-            transaction.setId(archivedTransaction.getId());
-            transaction.setWallet(archivedTransaction.getWallet());
-            transaction.setAmount(archivedTransaction.getAmount());
-            transaction.setTransactionType(archivedTransaction.getTransactionType());
-            transaction.setTimestamp(archivedTransaction.getTimestamp());
-            allTransactions.add(transaction);
+            TransactionDTO transactionDTO = new TransactionDTO(
+                    archivedTransaction.getTimestamp(),
+                    archivedTransaction.getDestinationWallet() != null && archivedTransaction.getDestinationWallet().getUser() != null
+                            ? archivedTransaction.getDestinationWallet().getUser().getFirstName()
+                            : "N/A", // Valor predeterminado si destinationWallet o user es nulo
+                    archivedTransaction.getTransactionType().name(),
+                    archivedTransaction.getAmount());
+            allTransactionDTOs.add(transactionDTO);
         }
 
-        return new PageImpl<>(allTransactions, pageable, activeTransactions.getTotalElements() + archivedTransactions.getTotalElements());
+
+        return new PageImpl<>(allTransactionDTOs, pageable, activeTransactions.getTotalElements() + archivedTransactions.getTotalElements());
     }
 }
