@@ -3,18 +3,22 @@ package com.nomcci.wallet.management.controller;
 import com.nomcci.wallet.management.dto.ErrorResponse;
 import com.nomcci.wallet.management.exception.InsufficientFundsException;
 import com.nomcci.wallet.management.exception.WalletNotFoundException;
+import com.nomcci.wallet.management.model.Transaction;
 import com.nomcci.wallet.management.model.Wallet;
 import com.nomcci.wallet.management.service.WalletService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/wallet/user")
+@CrossOrigin(origins = "http://localhost:3000")
 @RequiredArgsConstructor
 public class UserWalletController {
 
@@ -83,6 +87,27 @@ public class UserWalletController {
         Wallet wallet = walletService.createWallet();
         return new ResponseEntity<>(wallet, HttpStatus.CREATED);
 
+    }
+
+    /**
+     * Obtiene el historial de transacciones de una billetera.
+     *
+     * @param page           Número de página.
+     * @param size           Tamaño de la página.
+     * @param sortBy         Campo por el cual ordenar.
+     * @param startTimestamp Inicio del rango de fechas.
+     * @param endTimestamp   Fin del rango de fechas.
+     * @return Historial paginado de transacciones.
+     */
+    @GetMapping("/transactions")
+    public ResponseEntity<Page<Transaction>> getTransactionHistory(
+            @RequestParam int page,
+            @RequestParam int size,
+            @RequestParam(defaultValue = "timestamp") String sortBy,
+            @RequestParam(required = false) Instant startTimestamp,
+            @RequestParam(required = false) Instant endTimestamp ) {
+        Page<Transaction> transactions = walletService.getTransactionHistory(page, size, sortBy, startTimestamp, endTimestamp);
+        return ResponseEntity.ok(transactions);
     }
 
     // Manejadores de excepciones globales (opcional)

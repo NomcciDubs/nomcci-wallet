@@ -86,5 +86,4 @@ public class AdminWalletController {
         Page<Transaction> transactions = walletService.getTransactionHistory(walletId, page, size, sortBy, startTimestamp, endTimestamp);
         return ResponseEntity.ok(transactions);
     }
-
 }
