@@ -268,7 +268,7 @@ public class WalletService {
         Map<String, List<Transaction>> groupedTransactions = transactionsToArchive.stream()
                 .collect(Collectors.groupingBy(transaction -> {
                     Instant timestamp = transaction.getTimestamp();
-                    return timestamp.toString().substring(0, 7); // Ejemplo: "2024-01" para enero de 2024
+                    return timestamp.toString().substring(0, 7); 
                 }));
 
         // Crea resúmenes de las transacciones
@@ -310,7 +310,7 @@ public class WalletService {
     }
 
     public Wallet createWallet() {
-        Logger logger = LoggerFactory.getLogger(WalletService.class); // Ajusta a tu clase actual
+        Logger logger = LoggerFactory.getLogger(WalletService.class); 
 
         try {
             // Obtén el token JWT del contexto de seguridad
