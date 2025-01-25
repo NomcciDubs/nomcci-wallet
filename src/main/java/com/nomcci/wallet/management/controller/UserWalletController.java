@@ -48,16 +48,16 @@ public class UserWalletController {
     /**
      * Permite transferir dinero de una billetera del usuario a otra.
      *
-     * @param toWalletId   ID de la billetera de destino.
-     * @param amount       Cantidad a transferir.
+     * @param toEmail   Correo electrónico asociado a la billetera de destino.
+     * @param amount    Cantidad a transferir.
      * @return Respuesta exitosa si la transferencia se realizó correctamente.
      */
     @PostMapping("/transfer")
     public ResponseEntity<?> transfer(
-            @RequestParam Long toWalletId,
+            @RequestParam String toEmail,
             @RequestParam BigDecimal amount) {
         try {
-            walletService.transfer(toWalletId, amount);
+            walletService.transfer(toEmail, amount);
             return ResponseEntity.ok().build();
         } catch (WalletNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse("Wallet not found", e.getMessage()));
@@ -68,6 +68,10 @@ public class UserWalletController {
         }
     }
 
+    /**
+     * Endpoint para obtener el saldo del usuario
+     * @return saldo del usuario
+     */
     @GetMapping("/balance")
     public ResponseEntity<?> getBalance() {
         try {
@@ -82,6 +86,11 @@ public class UserWalletController {
         }
     }
 
+    /**
+     * Endpoint para crear billetera del usuario.
+     * @param token json web token del usuario.
+     * @return respuesta.
+     */
     @PostMapping("/create")
     public ResponseEntity<?> createWallet(@RequestHeader("Authorization") String token) {
 
@@ -111,7 +120,6 @@ public class UserWalletController {
         return ResponseEntity.ok(transactions);
     }
 
-    // Manejadores de excepciones globales (opcional)
     @ExceptionHandler(WalletNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleWalletNotFoundException(WalletNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse("Wallet not found", e.getMessage()));

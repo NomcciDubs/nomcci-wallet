@@ -125,12 +125,13 @@ public class WalletService {
     }
 
     /**
-     * Transfiere la cantidad especificada de una billetera a otra
-     * @param toWalletId id de la billetera a la que sera transferido el saldo
-     * @param amount cantidad de saldo a transferir
+     * Transfiere la cantidad especificada de una billetera a otra.
+     *
+     * @param toEmail Correo electrónico de la billetera de destino.
+     * @param amount  Cantidad de saldo a transferir.
      */
     @Transactional
-    public void transfer(Long toWalletId, BigDecimal amount) {
+    public void transfer(String toEmail, BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Transfer amount must be greater than zero.");
         }
@@ -144,31 +145,50 @@ public class WalletService {
         Wallet fromWallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Wallet not found for the user."));
 
-        if (fromWallet.getId().equals(toWalletId)) {
+        // Busca la billetera de destino por correo electrónico
+        User toUser = userRepository.findByEmail(toEmail)
+                .orElseThrow(() -> new IllegalArgumentException("Destination user not found."));
+        Wallet toWallet = walletRepository.findByUserId(toUser.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Destination wallet not found."));
+
+        if (fromWallet.getId().equals(toWallet.getId())) {
             throw new IllegalArgumentException("Cannot transfer to the same wallet.");
         }
-
-        Wallet toWallet = walletRepository.findById(toWalletId)
-                .orElseThrow(() -> new IllegalArgumentException("Destination wallet not found."));
 
         // Revisa si la billetera que transfiere tiene suficiente saldo
         if (fromWallet.getBalance().compareTo(amount) < 0) {
             throw new IllegalArgumentException("Insufficient balance in source wallet.");
         }
 
-        // Crea y guarda una nueva transaccion de Transfer
+        // Crea y guarda una nueva transacción de transferencia
         Transaction transferTransaction = new Transaction();
+
+        // Transacción de salida (de la billetera del usuario)
         transferTransaction.setWallet(fromWallet);
         transferTransaction.setDestinationWallet(toWallet);
-        transferTransaction.setAmount(amount);
+        transferTransaction.setAmount(amount.negate()); // Restamos el monto de la cuenta de origen
         transferTransaction.setTransactionType(TransactionType.TRANSFER);
         transferTransaction.setTimestamp(Instant.now());
         transactionRepository.save(transferTransaction);
 
-        // Recalcula el balance de ambas billeteras
-        recalculateBalance(fromWallet.getId());
-        recalculateBalance(toWalletId);
+        // Transacción de entrada (de la billetera del destinatario)
+        Transaction receiveTransaction = new Transaction();
+        receiveTransaction.setWallet(toWallet);
+        receiveTransaction.setDestinationWallet(fromWallet);
+        receiveTransaction.setAmount(amount); // Añadimos el monto a la cuenta de destino
+        receiveTransaction.setTransactionType(TransactionType.TRANSFER);
+        receiveTransaction.setTimestamp(Instant.now());
+        transactionRepository.save(receiveTransaction);
+
+        // Actualizamos los saldos de las billeteras
+        fromWallet.setBalance(fromWallet.getBalance().subtract(amount));
+        toWallet.setBalance(toWallet.getBalance().add(amount));
+
+        // Guardamos los cambios en las billeteras
+        walletRepository.save(fromWallet);
+        walletRepository.save(toWallet);
     }
+
 
     @Transactional
     public BigDecimal getBalance() {
@@ -414,18 +434,33 @@ public class WalletService {
             throw new IllegalArgumentException("Insufficient balance in source wallet.");
         }
 
-        // Crea y guarda una nueva transaccion de Transfer
+        // Crea y guarda una nueva transacción de transferencia
         Transaction transferTransaction = new Transaction();
+
+        // Transacción de salida (de la billetera del usuario)
         transferTransaction.setWallet(fromWallet);
         transferTransaction.setDestinationWallet(toWallet);
-        transferTransaction.setAmount(amount);
+        transferTransaction.setAmount(amount.negate()); // Restamos el monto de la cuenta de origen
         transferTransaction.setTransactionType(TransactionType.TRANSFER);
         transferTransaction.setTimestamp(Instant.now());
         transactionRepository.save(transferTransaction);
 
-        // Recalcula el balance de ambas billeteras
-        recalculateBalance(fromWallet.getId());
-        recalculateBalance(toWalletId);
+        // Transacción de entrada (de la billetera del destinatario)
+        Transaction receiveTransaction = new Transaction();
+        receiveTransaction.setWallet(toWallet);
+        receiveTransaction.setDestinationWallet(fromWallet);
+        receiveTransaction.setAmount(amount); // Añadimos el monto a la cuenta de destino
+        receiveTransaction.setTransactionType(TransactionType.TRANSFER);
+        receiveTransaction.setTimestamp(Instant.now());
+        transactionRepository.save(receiveTransaction);
+
+        // Actualizamos los saldos de las billeteras
+        fromWallet.setBalance(fromWallet.getBalance().subtract(amount));
+        toWallet.setBalance(toWallet.getBalance().add(amount));
+
+        // Guardamos los cambios en las billeteras
+        walletRepository.save(fromWallet);
+        walletRepository.save(toWallet);
     }
 
     /**
