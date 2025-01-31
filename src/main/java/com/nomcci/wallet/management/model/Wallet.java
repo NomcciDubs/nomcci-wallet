@@ -13,9 +13,8 @@ public class Wallet {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne
-    @JoinColumn(name = "user_id", nullable = false, unique = true)
-    private User user;
+    @Column
+    private Long userId;
 
     @Column(nullable = false)
     private BigDecimal balance = BigDecimal.ZERO;

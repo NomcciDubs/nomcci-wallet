@@ -3,6 +3,12 @@ package com.nomcci.wallet.management.service;
 import com.nomcci.wallet.management.dto.TransactionDTO;
 import com.nomcci.wallet.management.model.*;
 import com.nomcci.wallet.management.repository.*;
+import com.nomcci.wallet.management.util.JwtUtil;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -15,6 +21,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import java.time.Instant;
 
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.time.temporal.ChronoUnit;
@@ -28,10 +37,15 @@ import java.util.stream.Collectors;
 public class WalletService {
 
     private final WalletRepository walletRepository;
-    private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
     private final TransactionSummaryRepository transactionSummaryRepository;
     private final ArchivedTransactionRepository archivedTransactionRepository;
+    private final JwtUtil jwtUtil;
+    private final RestTemplate restTemplate;
+
+    @Value("${auth.service.url}")
+    private String authUrl;
+
 
     /**
      * Deposita la cantidad especificada en la billetera
@@ -145,10 +159,9 @@ public class WalletService {
         Wallet fromWallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Wallet not found for the user."));
 
-        // Busca la billetera de destino por correo electrónico
-        User toUser = userRepository.findByEmail(toEmail)
-                .orElseThrow(() -> new IllegalArgumentException("Destination user not found."));
-        Wallet toWallet = walletRepository.findByUserId(toUser.getId())
+        // Busca la billetera asociada al usuario destino
+        Long toUserId = getUserIdByEmail(toEmail);
+        Wallet toWallet = walletRepository.findByUserId(toUserId)
                 .orElseThrow(() -> new IllegalArgumentException("Destination wallet not found."));
 
         if (fromWallet.getId().equals(toWallet.getId())) {
@@ -257,32 +270,40 @@ public class WalletService {
         Pageable archivedPageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, sortBy));
         Page<ArchivedTransaction> archivedTransactions = archivedTransactionRepository.findByWalletAndTimestampBetween(wallet, startTimestamp, endTimestamp, archivedPageable);
 
-        // Une las transacciones activas y archivadas
-        List<TransactionDTO> allTransactionDTOs = new ArrayList<>();
-
         // Mapea transacciones activas a DTO
-        allTransactionDTOs.addAll(
-                activeTransactions.stream()
-                        .map(tx -> new TransactionDTO(
-                                tx.getTimestamp(),
-                                tx.getDestinationWallet() != null && tx.getDestinationWallet().getUser() != null
-                                        ? tx.getDestinationWallet().getUser().getFirstName()
-                                        : "N/A", // Valor predeterminado si destinationWallet o user es nulo
-                                tx.getTransactionType().name(),
-                                tx.getAmount()
-                        ))
-                        .toList()
-        );
+        List<TransactionDTO> allTransactionDTOs = new ArrayList<>(activeTransactions.stream()
+                .map(tx -> {
+                    String firstName = "N/A"; // Valor predeterminado
+
+                    if (tx.getDestinationWallet() != null) {
+                        Long toUserId = tx.getDestinationWallet().getUserId(); // Obtener el userId
+                        firstName = getFirstNameById(toUserId); // Llamada al servicio para obtener el nombre
+                    }
+
+                    return new TransactionDTO(
+                            tx.getTimestamp(),
+                            firstName,
+                            tx.getTransactionType().name(),
+                            tx.getAmount()
+                    );
+                })
+                .toList());
 
         // Mapea transacciones archivadas a DTO
         for (ArchivedTransaction archivedTransaction : archivedTransactions) {
+            String firstName = "N/A"; // Valor predeterminado
+
+            if (archivedTransaction.getDestinationWallet() != null && archivedTransaction.getDestinationWallet().getUserId() != null) {
+                Long toUserId = archivedTransaction.getDestinationWallet().getUserId();
+                firstName = getFirstNameById(toUserId);
+            }
+
             TransactionDTO transactionDTO = new TransactionDTO(
                     archivedTransaction.getTimestamp(),
-                    archivedTransaction.getDestinationWallet() != null && archivedTransaction.getDestinationWallet().getUser() != null
-                            ? archivedTransaction.getDestinationWallet().getUser().getFirstName()
-                            : "N/A", // Valor predeterminado si destinationWallet o user es nulo
+                    firstName,
                     archivedTransaction.getTransactionType().name(),
-                    archivedTransaction.getAmount());
+                    archivedTransaction.getAmount()
+            );
             allTransactionDTOs.add(transactionDTO);
         }
 
@@ -384,17 +405,13 @@ public class WalletService {
 
             Long userId = Long.parseLong(jwt.getClaim("sub").toString());
 
-            // Busca el usuario en la base de datos
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
-
             // Verifica si el usuario ya tiene una wallet asociada
-            if (walletRepository.existsByUser(user)) {
+            if (walletRepository.existsByUserId(userId)) {
                 throw new IllegalArgumentException("El usuario ya tiene una wallet asociada");
             }
 
             Wallet wallet = new Wallet();
-            wallet.setUser(user);
+            wallet.setUserId(userId);
             wallet.setBalance(BigDecimal.ZERO);
             wallet.setCurrency("USD");
             wallet.setActive(true);
@@ -539,28 +556,86 @@ public class WalletService {
 
         // Mapea transacciones activas a DTO
         List<TransactionDTO> allTransactionDTOs = new ArrayList<>(activeTransactions.stream()
-                .map(tx -> new TransactionDTO(
-                        tx.getTimestamp(),
-                        tx.getDestinationWallet() != null && tx.getDestinationWallet().getUser() != null
-                                ? tx.getDestinationWallet().getUser().getFirstName()
-                                : "N/A", // Valor predeterminado si destinationWallet o user es nulo
-                        tx.getTransactionType().name(),
-                        tx.getAmount()))
+                .map(tx -> {
+                    String firstName = "N/A"; // Valor predeterminado
+
+                    if (tx.getDestinationWallet() != null) {
+                        Long userId = tx.getDestinationWallet().getUserId(); // Obtener el userId
+                        firstName = getFirstNameById(userId); // Llamada al servicio para obtener el nombre
+                    }
+
+                    return new TransactionDTO(
+                            tx.getTimestamp(),
+                            firstName,
+                            tx.getTransactionType().name(),
+                            tx.getAmount()
+                    );
+                })
                 .toList());
 
         // Mapea transacciones archivadas a DTO
         for (ArchivedTransaction archivedTransaction : archivedTransactions) {
+            String firstName = "N/A"; // Valor predeterminado
+
+            if (archivedTransaction.getDestinationWallet() != null && archivedTransaction.getDestinationWallet().getUserId() != null) {
+                Long userId = archivedTransaction.getDestinationWallet().getUserId();
+                firstName = getFirstNameById(userId);
+            }
+
             TransactionDTO transactionDTO = new TransactionDTO(
                     archivedTransaction.getTimestamp(),
-                    archivedTransaction.getDestinationWallet() != null && archivedTransaction.getDestinationWallet().getUser() != null
-                            ? archivedTransaction.getDestinationWallet().getUser().getFirstName()
-                            : "N/A", // Valor predeterminado si destinationWallet o user es nulo
+                    firstName,
                     archivedTransaction.getTransactionType().name(),
-                    archivedTransaction.getAmount());
+                    archivedTransaction.getAmount()
+            );
             allTransactionDTOs.add(transactionDTO);
         }
 
 
         return new PageImpl<>(allTransactionDTOs, pageable, activeTransactions.getTotalElements() + archivedTransactions.getTotalElements());
+    }
+
+    public String getFirstNameById(Long userId) {
+        String url = authUrl + "/internal/wallet/get-user-by-id/" + userId;
+
+        // Configurar los headers con el token
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(jwtUtil.generateServiceToken());
+
+        // Crear la entidad HTTP
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        // Hacer la solicitud GET
+        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+
+        return response.getBody();
+    }
+
+    public Long getUserIdByEmail(String email) {
+        try{
+            String url = authUrl + "/internal/wallet/get-id-by-email?email=" + email;
+
+            // Configurar los headers con el token
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(jwtUtil.generateServiceToken());
+            // Imprimir los headers para ver si el token está presente
+            System.out.println("Authorization Header: " + headers.getFirst(HttpHeaders.AUTHORIZATION));
+
+
+            // Crear la entidad HTTP
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            // Hacer la solicitud GET
+            ResponseEntity<Long> response = restTemplate.exchange(url, HttpMethod.GET, entity, Long.class);
+
+            return response.getBody();
+        } catch (HttpClientErrorException | HttpServerErrorException ex) {
+            System.out.println("Error al hacer la solicitud: " + ex.getMessage());
+            System.out.println("Detalles del error: " + ex.getResponseBodyAsString());
+            throw new RuntimeException("Error al hacer la solicitud", ex);
+        } catch (Exception e) {
+            System.out.println("Error general: " + e.getMessage());
+            throw new RuntimeException("Error al hacer la solicitud", e);
+        }
     }
 }
