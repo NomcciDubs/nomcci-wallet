@@ -56,6 +56,10 @@ dependencies {
     implementation 'org.springframework.security:spring-security-oauth2-jose'
     implementation 'com.nimbusds:nimbus-jose-jwt:9.37.2'
 
+    // AWS
+    implementation 'io.awspring.cloud:spring-cloud-aws:3.3.0'
+    implementation 'io.awspring.cloud:spring-cloud-aws-starter-parameter-store:3.3.0'
+
 
 }
 
